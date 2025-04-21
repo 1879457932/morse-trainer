@@ -37,12 +37,30 @@ jobs:
         key: ${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
         restore-keys: |
           ${{ runner.os }}-
+    
+    - name: Cache Android NDK
+      uses: actions/cache@v4
+      id: cache-ndk
+      with:
+        path: ~/.buildozer/android/platform/android-ndk-r25b
+        key: ${{ runner.os }}-android-ndk-r25b
         
+    - name: Download Android NDK manually
+      if: steps.cache-ndk.outputs.cache-hit != 'true'
+      run: |
+        echo "使用脚本下载Android NDK以避免buildozer下载时的问题..."
+        # 安装requests库以支持下载
+        pip install requests
+        # 使用我们的下载脚本
+        python download_ndk.py --version 25b
+        
+        echo "Android NDK 已手动下载和安装"
+    
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install buildozer Cython==0.29.33 virtualenv
+        pip install buildozer==1.5.0 Cython==0.29.33 virtualenv
         # 安装额外的构建工具
         sudo apt-get update
         sudo apt-get install -y \
@@ -83,6 +101,22 @@ jobs:
         # 确保图标目录存在
         mkdir -p data/images
     
+    - name: Set execute permissions
+      run: |
+        # 设置下载脚本为可执行
+        chmod +x download_ndk.py
+    
+    - name: Modify buildozer.spec for CI
+      run: |
+        # 修改buildozer.spec以使用我们手动下载的NDK
+        sed -i 's/android.ndk = 25.1.8937393/android.ndk = 25b/g' buildozer.spec
+        
+        # 禁用NDK自动下载
+        echo "android.skip_update = True" >> buildozer.spec
+        
+        # 启用详细日志以帮助调试
+        echo "log_level = 2" >> buildozer.spec
+    
     - name: Build with Buildozer
       run: |
         # 确保图标和启动画面已创建
@@ -96,6 +130,8 @@ jobs:
         # 设置buildozer参数
         export BUILDOZER_BUILD_MODE=debug
         export BUILDOZER_VERBOSE=1
+        # 确保使用正确的minapi值
+        export ANDROIDMINAPI=24
         
         # 构建APK
         buildozer -v android debug
