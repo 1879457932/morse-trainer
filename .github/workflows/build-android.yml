@@ -86,7 +86,12 @@ jobs:
     - name: Build with Buildozer
       run: |
         # 确保图标和启动画面已创建
-        python create_icons.py || echo "Icon creation failed, using existing icons"
+        echo "尝试创建图标和启动画面..."
+        if python create_icons.py; then
+          echo "图标创建成功或已经存在"
+        else
+          echo "警告：图标创建失败，但将继续使用现有图标"
+        fi
         
         # 设置buildozer参数
         export BUILDOZER_BUILD_MODE=debug
