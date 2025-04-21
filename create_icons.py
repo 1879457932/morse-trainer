@@ -11,7 +11,7 @@ def create_icons():
         # 首先检查是否已存在图标，如存在则跳过生成
         if os.path.exists("data/images/icon.png") and os.path.exists("data/images/presplash.png"):
             print("图标和启动画面已存在，跳过生成。")
-            return
+            return True  # 返回True表示成功
             
         # 创建应用图标（不同尺寸）
         sizes = [32, 48, 64, 96, 128, 192, 256, 512]
