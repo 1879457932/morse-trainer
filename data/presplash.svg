@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1080" height="1920" viewBox="0 0 1080 1920" xmlns="http://www.w3.org/2000/svg">
+    <!-- 背景 -->
+    <rect width="1080" height="1920" fill="#2196F3"/>
+    
+    <!-- 中心内容 -->
+    <g transform="translate(540, 960)">
+        <!-- 图标 -->
+        <circle cx="0" cy="-100" r="120" fill="white"/>
+        <path d="M0 -160c-44.2 0-80 35.8-80 80v32c0 8.8 7.2 16 16 16h16v-64h-16c-8.8 0-16-7.2-16-16s7.2-16 16-16h16c0-26.5 21.5-48 48-48s48 21.5 48 48h16c8.8 0 16 7.2 16 16s-7.2 16-16 16h-16v64h16c8.8 0 16-7.2 16-16v-32c0-44.2-35.8-80-80-80z" fill="#2196F3"/>
+        <path d="M-96 -20h32v32h-32zM-32 -20h64v32h-64zM32 -20h32v32h-32z" fill="#2196F3"/>
+        <path d="M-64 12h32v32h-32zM32 12h32v32h-32z" fill="#2196F3"/>
+        
+        <!-- 应用名称 -->
+        <text x="0" y="100" font-family="Arial" font-size="48" fill="white" text-anchor="middle">
+            Morse Decoder
+        </text>
+        
+        <!-- 副标题 -->
+        <text x="0" y="160" font-family="Arial" font-size="24" fill="white" text-anchor="middle">
+            实时摩斯电码解码器
+        </text>
+    </g>
+</svg> 

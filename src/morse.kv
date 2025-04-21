@@ -1,0 +1,263 @@
+#:import get_color_from_hex kivy.utils.get_color_from_hex
+#:kivy 1.11.1
+#:import MDBoxLayout kivymd.uix.boxlayout.MDBoxLayout
+#:import MDLabel kivymd.uix.label.MDLabel
+#:import MDRaisedButton kivymd.uix.button.MDRaisedButton
+#:import MDList kivymd.uix.list.MDList
+#:import OneLineListItem kivymd.uix.list.OneLineListItem
+#:import MDScrollView kivymd.uix.scrollview.MDScrollView
+#:import MDSwitch kivymd.uix.switch.MDSwitch
+#:import ScrollView kivymd.uix.scrollview.ScrollView
+#:import Window kivy.core.window.Window
+
+<TouchRippleEffect@MDRaisedButton>:
+    ripple_duration_in_slow: 0.1
+    ripple_duration_out: 0.2
+    ripple_scale: 1.0
+    ripple_alpha: 0.8
+    
+<ResponsiveBox@MDBoxLayout>:
+    adaptive_height: True
+    orientation: 'vertical' if Window.width < Window.height else 'horizontal'
+    spacing: dp(10)
+    padding: dp(10)
+    
+<MainScreen>:
+    wave_graph: wave_graph
+    
+    MDBoxLayout:
+        orientation: 'vertical'
+        padding: dp(10)
+        spacing: dp(10)
+        md_bg_color: get_color_from_hex("#121212") if app.theme_cls.theme_style == "Dark" else get_color_from_hex("#f5f5f5")
+
+        # 标题栏
+        MDBoxLayout:
+            size_hint_y: None
+            height: dp(50)
+            md_bg_color: app.theme_cls.primary_color
+            padding: [dp(10), 0]
+            
+            MDLabel:
+                text: "摩尔斯电码训练器"
+                font_style: "H6"
+                halign: "center"
+                theme_text_color: "Custom"
+                text_color: 1, 1, 1, 1
+            
+            MDRaisedButton:
+                text: "切换悬浮窗" if not root.is_floating else "退出悬浮窗"
+                on_release: root.toggle_floating()
+                pos_hint: {"center_y": 0.5}
+                size_hint_x: None
+                width: dp(120)
+                md_bg_color: get_color_from_hex("#2E7D32") if not root.is_floating else get_color_from_hex("#C62828")
+
+        # 控制面板
+        ResponsiveBox:
+            id: control_panel
+            size_hint_y: None
+            height: dp(150)
+            
+            MDBoxLayout:
+                orientation: 'vertical'
+                size_hint_x: 0.5 if self.parent.orientation == 'horizontal' else 1.0
+                spacing: dp(5)
+                
+                MDLabel:
+                    text: root.current_frequency
+                    halign: 'center'
+                    font_size: '16sp'
+                    size_hint_y: None
+                    height: dp(20)
+
+                MDLabel:
+                    text: root.frequency_adjustment
+                    halign: 'center'
+                    font_size: '14sp'
+                    color: 0, 0.7, 0, 1 if "正常" in root.frequency_adjustment else 0.7, 0, 0, 1
+                    size_hint_y: None
+                    height: dp(20)
+
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: dp(36)
+                    padding: [dp(5), 0]
+                    
+                    MDLabel:
+                        text: "自动频率调整"
+                        halign: 'right'
+                        size_hint_x: 0.7
+                        
+                    MDSwitch:
+                        id: auto_adjust_switch
+                        active: root.auto_adjust
+                        on_active: root.toggle_auto_adjust()
+                        size_hint_x: 0.3
+
+                MDLabel:
+                    text: f"准确率: {root.accuracy*100:.1f}%"
+                    halign: 'center'
+                    font_size: '16sp'
+                    size_hint_y: None
+                    height: dp(20)
+                    
+                MDLabel:
+                    text: root.noise_level
+                    halign: 'center'
+                    font_size: '14sp'
+                    size_hint_y: None
+                    height: dp(20)
+            
+            # 频率控制
+            FrequencyControl:
+                id: freq_control
+                size_hint_x: 0.5 if self.parent.orientation == 'horizontal' else 1.0
+                target_frequency: root.target_frequency
+                frequency_bandwidth: root.frequency_bandwidth
+                frequency_sensitivity: root.frequency_sensitivity
+                
+                on_target_frequency: root.target_frequency = self.target_frequency
+                on_frequency_bandwidth: root.frequency_bandwidth = self.frequency_bandwidth
+                on_frequency_sensitivity: root.frequency_sensitivity = self.frequency_sensitivity
+
+        # 波形图
+        GraphCanvas:
+            id: wave_graph
+            size_hint_y: 0.3 if not root.is_floating else 0.4
+            canvas.before:
+                Color:
+                    rgba: 0.1, 0.1, 0.1, 1
+                Rectangle:
+                    pos: self.pos
+                    size: self.size
+
+        # 解码区域
+        MDBoxLayout:
+            orientation: 'vertical'
+            size_hint_y: 0.2 if not root.is_floating else 0.3
+            spacing: dp(5)
+            padding: dp(5)
+            md_bg_color: get_color_from_hex("#1E1E1E") if app.theme_cls.theme_style == "Dark" else get_color_from_hex("#EEEEEE")
+            
+            MDLabel:
+                text: root.current_sequence
+                halign: 'center'
+                font_size: '24sp'
+                theme_text_color: "Primary"
+                bold: True
+
+            MDLabel:
+                text: root.decoded_result
+                halign: 'center'
+                font_size: '20sp'
+                theme_text_color: "Secondary"
+
+            MDLabel:
+                text: root.ai_prediction
+                halign: 'center'
+                font_size: '20sp'
+                theme_text_color: "Secondary"
+
+        # 控制按钮
+        MDBoxLayout:
+            size_hint_y: None
+            height: dp(50)
+            spacing: dp(10)
+            padding: [dp(10), 0]
+
+            TouchRippleEffect:
+                text: "开始录音" if not root.is_recording else "停止录音"
+                on_release: root.toggle_recording()
+                size_hint_x: 0.5
+                md_bg_color: get_color_from_hex("#2E7D32") if not root.is_recording else get_color_from_hex("#C62828")
+
+            TouchRippleEffect:
+                text: "训练AI"
+                on_release: root.train_ai()
+                size_hint_x: 0.5
+                md_bg_color: get_color_from_hex("#1976D2")
+
+        MDBoxLayout:
+            size_hint_y: None
+            height: dp(50)
+            spacing: dp(10)
+            padding: [dp(10), 0]
+            
+            TouchRippleEffect:
+                text: "清除历史"
+                on_release: root.clear_history()
+                size_hint_x: 0.5
+                md_bg_color: get_color_from_hex("#7B1FA2")
+
+            TouchRippleEffect:
+                text: "导出数据"
+                on_release: root.export_data()
+                size_hint_x: 0.5
+                md_bg_color: get_color_from_hex("#00796B")
+
+        # 历史记录
+        MDBoxLayout:
+            orientation: 'vertical'
+            size_hint_y: 0.3 if not root.is_floating else 0.1
+            
+            MDLabel:
+                text: "历史记录"
+                halign: 'center'
+                size_hint_y: None
+                height: dp(30)
+                font_style: "Subtitle1"
+            
+            ScrollView:
+                do_scroll_x: False
+                bar_width: dp(5)
+                bar_color: app.theme_cls.primary_color
+                bar_inactive_color: 0.5, 0.5, 0.5, 0.5
+                effect_cls: "ScrollEffect"
+                scroll_type: ["bars", "content"]
+                
+                MDList:
+                    id: history_list
+                    spacing: dp(2)
+                    padding: dp(5)
+                    adaptive_height: True
+                    md_bg_color: get_color_from_hex("#1A1A1A") if app.theme_cls.theme_style == "Dark" else get_color_from_hex("#F0F0F0")
+
+<HistoryItem>:
+    MDCard:
+        size_hint: None, None
+        size: dp(300), dp(150)
+        pos_hint: {'center_x': 0.5}
+        padding: dp(10)
+        spacing: dp(10)
+
+        MDBoxLayout:
+            orientation: 'vertical'
+            spacing: dp(5)
+
+            MDLabel:
+                text: root.timestamp
+                font_size: '14sp'
+                halign: 'center'
+
+            MDLabel:
+                text: root.morse_text
+                font_size: '16sp'
+                halign: 'center'
+
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(40)
+                spacing: dp(10)
+
+                MDRaisedButton:
+                    text: "正确"
+                    on_release: root.mark_result(True)
+                    md_bg_color: 0, 0.7, 0, 1
+                    size_hint_x: 0.5
+
+                MDRaisedButton:
+                    text: "错误"
+                    on_release: root.mark_result(False)
+                    md_bg_color: 0.7, 0, 0, 1
+                    size_hint_x: 0.5 
