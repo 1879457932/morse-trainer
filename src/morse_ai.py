@@ -118,7 +118,8 @@ class MorseAI:
         self.log_dir = os.path.join(self.data_dir, 'logs')
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
-        self.writer = SummaryWriter(log_dir=self.log_dir)
+        # 在实际需要时才初始化SummaryWriter，避免不必要的资源占用
+        self.writer = None
 
     def prepare_data(self):
         """准备训练数据"""
@@ -192,7 +193,15 @@ class MorseAI:
         if X is None or y is None:
             logger.error("无法准备训练数据")
             return False
-            
+        
+        # 初始化SummaryWriter，仅在训练时使用
+        if self.writer is None:
+            try:
+                self.writer = SummaryWriter(log_dir=self.log_dir)
+            except Exception as e:
+                logger.error(f"创建SummaryWriter失败: {e}")
+                self.writer = None  # 确保writer为None
+                
         # 创建数据集和数据加载器
         dataset = MorseDataset(X, y)
         train_size = int(0.8 * len(dataset))
@@ -223,7 +232,7 @@ class MorseAI:
             train_loss = 0.0
             train_acc = 0.0
             
-            for inputs, targets in train_loader:
+            for i, (inputs, targets) in enumerate(train_loader):
                 optimizer.zero_grad()
                 
                 outputs = self.model(inputs)
@@ -232,11 +241,23 @@ class MorseAI:
                 loss.backward()
                 optimizer.step()
                 
-                train_loss += loss.item()
+                # 计算训练损失
+                train_loss += loss.item() * inputs.size(0)
                 
                 # 计算准确率
                 _, predicted = torch.max(outputs, 1)
                 train_acc += (predicted == targets).sum().item() / targets.size(0)
+                
+                # 记录训练进度信息
+                if i % 10 == 0:  # 每10个批次记录一次
+                    logger.info(f"轮次 {epoch+1}/{epochs}, 批次 {i+1}/{len(train_loader)}, 损失: {loss.item():.4f}")
+                    
+                    # 记录到TensorBoard（如果可用）
+                    if self.writer:
+                        try:
+                            self.writer.add_scalar('training_loss', loss.item(), epoch * len(train_loader) + i)
+                        except Exception as e:
+                            logger.warning(f"记录TensorBoard数据失败: {e}")
             
             # 计算平均损失和准确率
             train_loss /= len(train_loader)
@@ -254,7 +275,7 @@ class MorseAI:
                     outputs = self.model(inputs)
                     loss = criterion(outputs, targets)
                     
-                    val_loss += loss.item()
+                    val_loss += loss.item() * inputs.size(0)
                     
                     # 计算准确率
                     _, predicted = torch.max(outputs, 1)
@@ -268,37 +289,52 @@ class MorseAI:
             val_acc /= len(val_loader)
             
             # 计算其他评估指标
-            precision = precision_score(all_targets, all_preds, average='macro')
-            recall = recall_score(all_targets, all_preds, average='macro')
-            f1 = f1_score(all_targets, all_preds, average='macro')
+            precision = precision_score(all_targets, all_preds, average='weighted', zero_division=0)
+            recall = recall_score(all_targets, all_preds, average='weighted', zero_division=0)
+            f1 = f1_score(all_targets, all_preds, average='weighted', zero_division=0)
             
             # 更新学习率
             scheduler.step(val_loss)
             
             # 记录到TensorBoard
-            self.writer.add_scalar('Loss/train', train_loss, epoch)
-            self.writer.add_scalar('Loss/val', val_loss, epoch)
-            self.writer.add_scalar('Accuracy/train', train_acc, epoch)
-            self.writer.add_scalar('Accuracy/val', val_acc, epoch)
-            self.writer.add_scalar('Precision', precision, epoch)
-            self.writer.add_scalar('Recall', recall, epoch)
-            self.writer.add_scalar('F1', f1, epoch)
+            if self.writer:
+                try:
+                    self.writer.add_scalar('Loss/train', train_loss, epoch)
+                    self.writer.add_scalar('Loss/validation', val_loss, epoch)
+                    self.writer.add_scalar('Accuracy/train', train_acc, epoch)
+                    self.writer.add_scalar('Accuracy/validation', val_acc, epoch)
+                    
+                    # 额外计算并记录精确度、召回率和F1分数（对于多分类问题）
+                    preds = torch.argmax(outputs, axis=1).cpu().numpy()
+                    targets_np = targets.cpu().numpy()
+                    precision = precision_score(targets_np, preds, average='weighted', zero_division=0)
+                    recall = recall_score(targets_np, preds, average='weighted', zero_division=0)
+                    f1 = f1_score(targets_np, preds, average='weighted', zero_division=0)
+                    
+                    self.writer.add_scalar('Precision', precision, epoch)
+                    self.writer.add_scalar('Recall', recall, epoch)
+                    self.writer.add_scalar('F1', f1, epoch)
+                except Exception as e:
+                    logger.warning(f"记录TensorBoard指标失败: {e}")
             
-            # 输出训练状态
-            logger.info(f"轮次 {epoch+1}/{epochs} - 训练损失: {train_loss:.4f}, 训练准确率: {train_acc:.4f}, 验证损失: {val_loss:.4f}, 验证准确率: {val_acc:.4f}")
+            logger.info(f"轮次 {epoch+1}/{epochs} - 训练损失: {train_loss:.4f}, 准确率: {train_acc:.4f}, 验证损失: {val_loss:.4f}, 准确率: {val_acc:.4f}")
             
-            # 早停检查
+            # 保存最佳模型
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
+                torch.save(self.model.state_dict(), os.path.join(self.data_dir, 'morse_model.pth'))
+                logger.info(f"模型已保存，验证损失: {val_loss:.4f}")
                 patience_counter = 0
-                
-                # 保存最佳模型
-                self.save_model()
             else:
                 patience_counter += 1
-                if patience_counter >= patience:
-                    logger.info(f"早停触发, 轮次 {epoch+1}")
-                    break
+                
+            # 早停
+            if patience_counter >= patience:
+                logger.info(f"早停触发, 轮次 {epoch+1}")
+                break
+        
+        # 在训练完成后关闭TensorBoard writer
+        self.close_writer()
         
         # 如果启用量化，创建量化版本
         if self.quantize:
@@ -306,6 +342,16 @@ class MorseAI:
             
         logger.info("训练完成")
         return True
+
+    def close_writer(self):
+        """安全关闭TensorBoard writer"""
+        if hasattr(self, 'writer') and self.writer is not None:
+            try:
+                self.writer.close()
+                self.writer = None
+                logger.info("已关闭TensorBoard writer")
+            except Exception as e:
+                logger.error(f"关闭TensorBoard writer时发生错误: {e}")
 
     def quantize_model(self):
         """量化模型以减少大小和提高推理速度"""
@@ -453,5 +499,5 @@ class MorseAI:
 
     def __del__(self):
         """清理资源"""
-        if hasattr(self, 'writer') and self.writer:
-            self.writer.close() 
+        # 安全关闭TensorBoard writer
+        self.close_writer() 
