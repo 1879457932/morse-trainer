@@ -21,7 +21,7 @@ fullscreen = 0
 # Android settings
 android.api = 31
 android.minapi = 21
-android.ndk = 25.1.8937393
+android.ndk = 25b
 android.gradle_dependencies = androidx.core:core:1.7.0
 android.permissions = RECORD_AUDIO,MODIFY_AUDIO_SETTINGS,FOREGROUND_SERVICE,WAKE_LOCK,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
 android.wakelock = True

@@ -1,26 +1,26 @@
 # 基础依赖
 kivy==2.2.1
 kivymd==1.1.1
-numpy==1.26.0
-scipy==1.11.3
-matplotlib==3.8.0
+numpy==1.21.6  # 更老但更稳定的版本，兼容性更好
+scipy==1.7.3   # 与numpy 1.21兼容的版本
+matplotlib==3.5.3  # 最后支持Python 3.7-3.9的版本
 
 # 移除过重的依赖，使用预编译版本
 # torch==2.1.0
 # scikit-learn==1.3.2
 
 # 轻量级替代
-scikit-learn==1.3.2
+scikit-learn==1.0.2  # 更稳定的版本
 
 # 音频处理
 # pyaudio会在编译时被添加，不需要在这里指定
 
 # 图形和UI
 kivy_garden.graph==0.4.0
-Pillow==10.0.1
+Pillow==9.5.0  # 最后支持Python 3.7-3.9的版本
 
 # Android特定
-pyjnius==1.5.0
+pyjnius==1.4.0  # 更稳定的版本
 # android库会由buildozer提供
 
 # 工具和优化 - 移除不兼容项
