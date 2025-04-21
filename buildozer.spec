@@ -9,7 +9,7 @@ source.exclude_dirs = tests,docs,bin,.vscode,.git
 source.exclude_patterns = .gitignore,__pycache__/**,*.pyc,*.git*
 source.main = src/main.py
 version = 1.0.0
-requirements = python3,kivy==2.2.1,kivymd==1.1.1,numpy==1.26.0,scipy==1.11.3,matplotlib==3.8.0,pyjnius==1.5.0,android==1.0.0
+requirements = python3,kivy==2.2.1,kivymd==1.1.1,numpy==1.21.6,scipy==1.7.3,matplotlib==3.5.3,pyjnius==1.5.0,android==1.0.0
 p4a.bootstrap = sdl2
 p4a.branch = develop
 p4a.local_recipes = .
