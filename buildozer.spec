@@ -68,7 +68,6 @@ android.use_wifi = False
 # Build settings
 requirements.source.pip = https://mirrors.aliyun.com/pypi/simple/
 p4a.hook = 
-p4a.bootstrap = sdl2
 
 # 添加debuggable选项以便调试
 android.release_artifact = apk
