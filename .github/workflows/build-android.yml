@@ -113,9 +113,6 @@ jobs:
         
         # 禁用NDK自动下载
         echo "android.skip_update = True" >> buildozer.spec
-        
-        # 启用详细日志以帮助调试
-        echo "log_level = 2" >> buildozer.spec
     
     - name: Build with Buildozer
       run: |
