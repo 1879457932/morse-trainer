@@ -1,0 +1,116 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0  # 获取完整历史记录以支持版本号生成
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        cache: 'pip' # 启用pip缓存以加速构建
+        
+    - name: Cache Buildozer global directory
+      uses: actions/cache@v3
+      with:
+        path: ~/.buildozer
+        key: ${{ runner.os }}-buildozer-global-${{ hashFiles('buildozer.spec') }}
+        restore-keys: |
+          ${{ runner.os }}-buildozer-global-
+    
+    - name: Cache Buildozer project directory
+      uses: actions/cache@v3
+      with:
+        path: ./.buildozer
+        key: ${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+        restore-keys: |
+          ${{ runner.os }}-
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install buildozer Cython==0.29.33 virtualenv
+        # 安装额外的构建工具
+        sudo apt-get update
+        sudo apt-get install -y \
+          python3-pip \
+          build-essential \
+          git \
+          python3 \
+          python3-dev \
+          libffi-dev \
+          libssl-dev \
+          ffmpeg \
+          libsdl2-dev \
+          libsdl2-image-dev \
+          libsdl2-mixer-dev \
+          libsdl2-ttf-dev \
+          libportmidi-dev \
+          libswscale-dev \
+          libavformat-dev \
+          libavcodec-dev \
+          zlib1g-dev \
+          libwebp-dev \
+          libfreetype6-dev
+    
+    - name: Install OpenJDK
+      uses: actions/setup-java@v3
+      with:
+        distribution: 'temurin'
+        java-version: '11'
+    
+    - name: Create heavy dependencies exclusion
+      run: |
+        # 排除重型依赖以避免构建超时
+        mkdir -p .buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/python-installs/morsetrainer/arm64-v8a/
+        mkdir -p .buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/python-installs/morsetrainer/armeabi-v7a/
+        
+    - name: Create necessary directories
+      run: |
+        # 确保图标目录存在
+        mkdir -p data/images
+    
+    - name: Build with Buildozer
+      run: |
+        # 确保图标和启动画面已创建
+        python create_icons.py || echo "Icon creation failed, using existing icons"
+        
+        # 设置buildozer参数
+        export BUILDOZER_BUILD_MODE=debug
+        export BUILDOZER_VERBOSE=1
+        
+        # 构建APK
+        buildozer -v android debug
+      
+    - name: List generated files
+      run: |
+        echo "Generated APK files:"
+        ls -la bin/
+      
+    - name: Upload APK
+      uses: actions/upload-artifact@v3
+      with:
+        name: app-debug
+        path: bin/*.apk
+        
+    - name: Upload Build Logs
+      if: always()  # 即使失败也上传日志
+      uses: actions/upload-artifact@v3
+      with:
+        name: build-logs
+        path: |
+          .buildozer/logs/*.log
+          buildozer.log 
