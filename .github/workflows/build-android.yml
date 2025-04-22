@@ -29,9 +29,12 @@ jobs:
 
       - name: Install Android SDK components
         run: |
+          # 查看可用的NDK版本
+          sdkmanager --list | grep ndk
+          
           # 安装必要的Android SDK组件
           yes | sdkmanager --licenses || true
-          sdkmanager "platform-tools" "platforms;android-31" "build-tools;30.0.3" "ndk;25b"
+          sdkmanager "platform-tools" "platforms;android-31" "build-tools;30.0.3" "ndk;25.2.9519653"
           echo "检查SDK和NDK安装:"
           ls -la $ANDROID_SDK_ROOT/
           ls -la $ANDROID_SDK_ROOT/build-tools || echo "build-tools not found"
@@ -100,7 +103,7 @@ jobs:
             # 确保关键设置正确
             echo "更新关键设置..."
             sed -i 's/^android.minapi.*/android.minapi = 24/' buildozer.spec
-            sed -i 's/^android.ndk.*/android.ndk = 25b/' buildozer.spec
+            sed -i 's/^android.ndk.*/android.ndk = 25.2.9519653/' buildozer.spec
             # 更新android.arch为列表格式
             sed -i 's/^android.arch.*/android.archs = arm64-v8a/' buildozer.spec
             # 确保使用正确的python-for-android版本
@@ -134,7 +137,7 @@ jobs:
             echo "android.permissions = INTERNET" >> buildozer.spec
             echo "android.api = 31" >> buildozer.spec
             echo "android.minapi = 24" >> buildozer.spec
-            echo "android.ndk = 25b" >> buildozer.spec
+            echo "android.ndk = 25.2.9519653" >> buildozer.spec
             echo "android.sdk = 31" >> buildozer.spec
             echo "android.archs = arm64-v8a" >> buildozer.spec
             echo "p4a.branch = master" >> buildozer.spec
@@ -169,7 +172,7 @@ jobs:
           
           # 设置ANDROID_HOME和NDK_HOME环境变量
           export ANDROID_HOME=$ANDROID_SDK_ROOT
-          export NDK_HOME=$ANDROID_SDK_ROOT/ndk/25b
+          export NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653
           
           # 显示Android SDK和NDK环境变量
           echo "Android SDK路径: $ANDROID_HOME"
