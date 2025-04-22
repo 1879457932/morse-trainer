@@ -103,7 +103,12 @@ jobs:
           libavcodec-dev \
           zlib1g-dev \
           libwebp-dev \
-          libfreetype6-dev
+          libfreetype6-dev \
+          autoconf \
+          automake \
+          libtool \
+          pkg-config \
+          m4
     
     - name: Install OpenJDK
       uses: actions/setup-java@v4
@@ -162,6 +167,10 @@ jobs:
         echo "确认NDK路径..."
         export ANDROIDNDK=~/.buildozer/android/platform/android-ndk-r25b
         
+        # 准备预下载的libffi
+        echo "预先准备libffi..."
+        mkdir -p .buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/libffi
+        
         # 构建APK
         echo "开始构建APK..."
         buildozer -v android debug
@@ -184,4 +193,74 @@ jobs:
         name: build-logs
         path: |
           .buildozer/logs/*.log
-          buildozer.log 
+          buildozer.log
+    
+    - name: Prepare for build
+      run: |
+        # 创建钩子目录结构
+        mkdir -p .buildozer/hooks
+        
+        # 创建一个包含LT_SYS_SYMBOL_USCORE定义的补丁文件
+        echo "创建libffi修补文件..."
+        mkdir -p .buildozer/patches
+        cat > .buildozer/patches/libffi_fix.m4 << 'EOF'
+        # Check for symbol versioning support.
+        AC_DEFUN([LT_SYS_SYMBOL_USCORE],
+        [AC_CACHE_CHECK([for _ prefix in compiled symbols],
+          [lt_cv_sys_symbol_underscore],
+          [lt_cv_sys_symbol_underscore=no
+          cat > conftest.$ac_ext <<_LT_EOF
+        void nm_test_func(){}
+        int main(){nm_test_func();return 0;}
+        _LT_EOF
+          if AC_TRY_EVAL(ac_compile); then
+            # Now try to grab the symbols.
+            ac_nlist=conftest.nm
+            if AC_TRY_EVAL(NM conftest.$ac_objext \| $lt_cv_sys_global_symbol_pipe \> $ac_nlist) && test -s "$ac_nlist"; then
+              # See whether the symbols have a leading underscore.
+              if grep '^. _nm_test_func' "$ac_nlist" >/dev/null; then
+                lt_cv_sys_symbol_underscore=yes
+              else
+                if grep '^. nm_test_func ' "$ac_nlist" >/dev/null; then
+                  lt_cv_sys_symbol_underscore=no
+                fi
+              fi
+            fi
+            rm -f conftest.$ac_objext "$ac_nlist"
+          fi
+          rm -f conftest.$ac_ext
+        ])
+        ])
+        EOF
+        
+        echo "准备构建钩子..."
+        cat > .buildozer/hooks/before.sh << 'EOF'
+        #!/bin/bash
+        set -x
+        echo "执行钩子脚本..."
+        # 这个脚本会在每个构建步骤之前运行
+        
+        # 检查是否在处理libffi
+        if [[ -d ".buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/libffi" ]]; then
+          for arch in arm64-v8a armeabi-v7a; do
+            LIBFFI_DIR=".buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/libffi/${arch}__ndk_target_24/libffi"
+            if [[ -d "$LIBFFI_DIR" ]]; then
+              echo "修补 libffi 目录: $LIBFFI_DIR"
+              # 如果m4目录存在，就添加我们的修补文件
+              if [[ -d "$LIBFFI_DIR/m4" ]]; then
+                cp ".buildozer/patches/libffi_fix.m4" "$LIBFFI_DIR/m4/"
+                # 修复configure.ac文件中的问题
+                cd "$LIBFFI_DIR"
+                # 添加定义到configure.ac
+                sed -i '/AC_INIT/a\
+                # 添加缺失的宏定义\
+                m4_define([LT_SYS_SYMBOL_USCORE], [])' configure.ac
+                # 强制生成新的configure脚本
+                autoreconf -vif
+              fi
+            fi
+          done
+        fi
+        EOF
+        
+        chmod +x .buildozer/hooks/before.sh 
