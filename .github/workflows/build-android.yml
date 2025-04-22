@@ -126,7 +126,7 @@ jobs:
           ls -la logs/ >> logs/log-list.txt
 
       - name: Upload APK
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: app-debug
           path: bin/*.apk
@@ -141,7 +141,7 @@ jobs:
           find . -name "buildozer.log" || true
       
       - name: Upload Build Logs
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: build-logs
           path: logs
