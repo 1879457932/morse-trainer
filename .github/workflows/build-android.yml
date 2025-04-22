@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04  # 使用Ubuntu 20.04而不是最新版本
+    runs-on: ubuntu-22.04  # 更新为Ubuntu 22.04
     
     steps:
       - uses: actions/checkout@v3
@@ -24,7 +24,8 @@ jobs:
           pip install buildozer==1.5.0  # 锁定buildozer版本
           pip install cython==0.29.33
           sudo apt update
-          sudo apt install -y git zip unzip openjdk-11-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev
+          # 在Ubuntu 22.04中使用libtinfo-dev替代libtinfo5
+          sudo apt install -y git zip unzip openjdk-11-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo-dev cmake libffi-dev libssl-dev
           sudo apt install -y libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev libportmidi-dev libswscale-dev libavformat-dev libavcodec-dev
           sudo apt install -y x11proto-core-dev libx11-dev libxrandr-dev
           sudo apt install -y libzbar-dev
@@ -33,7 +34,7 @@ jobs:
           
           # 额外步骤：检查并显示apt安装的包版本
           echo "已安装的关键包版本："
-          dpkg-query -W -f='${Package} ${Version}\n' libffi-dev libssl-dev libtinfo5 2>/dev/null || true
+          dpkg-query -W -f='${Package} ${Version}\n' libffi-dev libssl-dev libtinfo-dev 2>/dev/null || true
 
       # 添加检查buildozer.spec文件的步骤
       - name: Check buildozer.spec
@@ -51,7 +52,25 @@ jobs:
               echo "android.minapi = 24" >> buildozer.spec
             fi
           else
-            echo "警告: 找不到buildozer.spec文件，请确保项目中包含此文件"
+            echo "警告: 找不到buildozer.spec文件，将创建基本配置"
+            echo "[app]" > buildozer.spec
+            echo "title = Morse Trainer" >> buildozer.spec
+            echo "package.name = morsetrainer" >> buildozer.spec
+            echo "package.domain = org.test" >> buildozer.spec
+            echo "source.dir = ." >> buildozer.spec
+            echo "source.include_exts = py,png,jpg,kv,atlas" >> buildozer.spec
+            echo "version = 0.1" >> buildozer.spec
+            echo "requirements = python3,kivy" >> buildozer.spec
+            echo "orientation = portrait" >> buildozer.spec
+            echo "osd = md" >> buildozer.spec
+            echo "fullscreen = 0" >> buildozer.spec
+            echo "android.permissions = INTERNET" >> buildozer.spec
+            echo "android.api = 31" >> buildozer.spec
+            echo "android.minapi = 24" >> buildozer.spec
+            echo "android.ndk = 23b" >> buildozer.spec
+            echo "android.sdk = 31" >> buildozer.spec
+            echo "android.arch = arm64-v8a" >> buildozer.spec
+            echo "buildozer.spec已创建"
           fi
 
       - name: Build with Buildozer
@@ -96,18 +115,18 @@ jobs:
           ls -la >> logs/env-info.log
           
           # 再次尝试构建
-          echo "再次尝试直接构建APK..."
+          echo "开始构建APK..."
           
           # 先确保钩子目录存在
           mkdir -p .buildozer/hooks
           cat > .buildozer/hooks/before.sh << 'EOF'
           #!/bin/bash
           set -x
-          echo "准备第二次构建尝试..."
+          echo "准备构建..."
           # 尝试直接修复libffi问题
           # 查找所有libffi目录
           for LIBFFI_DIR in $(find .buildozer -path "*/libffi/configure.ac" | xargs dirname); do
-            echo "在第二次构建中修复 $LIBFFI_DIR/configure.ac"
+            echo "修复 $LIBFFI_DIR/configure.ac"
             if [ -f "$LIBFFI_DIR/configure.ac" ]; then
               # 添加缺失的宏定义到configure.ac
               sed -i '/AC_INIT/a # 添加缺失的宏定义\nm4_define([LT_SYS_SYMBOL_USCORE], [])' "$LIBFFI_DIR/configure.ac"
