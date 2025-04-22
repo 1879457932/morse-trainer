@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04  # 使用Ubuntu 20.04而不是最新版本
     
     steps:
       - uses: actions/checkout@v3
@@ -21,11 +21,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install buildozer
+          pip install buildozer==1.5.0  # 锁定buildozer版本
           pip install cython==0.29.33
           sudo apt update
-          # 使用libtinfo-dev代替libtinfo5，libtinfo5在新版Ubuntu中可能不可用
-          sudo apt install -y git zip unzip openjdk-11-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo-dev cmake libffi-dev libssl-dev
+          sudo apt install -y git zip unzip openjdk-11-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev
           sudo apt install -y libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev libportmidi-dev libswscale-dev libavformat-dev libavcodec-dev
           sudo apt install -y x11proto-core-dev libx11-dev libxrandr-dev
           sudo apt install -y libzbar-dev
@@ -34,7 +33,26 @@ jobs:
           
           # 额外步骤：检查并显示apt安装的包版本
           echo "已安装的关键包版本："
-          dpkg-query -W -f='${Package} ${Version}\n' libffi-dev libssl-dev libtinfo-dev 2>/dev/null || true
+          dpkg-query -W -f='${Package} ${Version}\n' libffi-dev libssl-dev libtinfo5 2>/dev/null || true
+
+      # 添加检查buildozer.spec文件的步骤
+      - name: Check buildozer.spec
+        run: |
+          echo "检查buildozer.spec文件..."
+          if [ -f "buildozer.spec" ]; then
+            echo "buildozer.spec内容:"
+            cat buildozer.spec
+            # 确保minapi设置正确
+            if grep -q "^android.minapi" buildozer.spec; then
+              echo "更新minapi设置..."
+              sed -i 's/^android.minapi.*/android.minapi = 24/' buildozer.spec
+            else
+              echo "添加minapi设置..."
+              echo "android.minapi = 24" >> buildozer.spec
+            fi
+          else
+            echo "警告: 找不到buildozer.spec文件，请确保项目中包含此文件"
+          fi
 
       - name: Build with Buildozer
         run: |
@@ -70,6 +88,12 @@ jobs:
           python --version >> logs/env-info.log
           echo "Pip包：" >> logs/env-info.log
           pip list >> logs/env-info.log
+          
+          # 显示当前目录和buildozer.spec文件
+          echo "当前目录:" >> logs/env-info.log
+          pwd >> logs/env-info.log
+          echo "文件列表:" >> logs/env-info.log
+          ls -la >> logs/env-info.log
           
           # 再次尝试构建
           echo "再次尝试直接构建APK..."
@@ -108,8 +132,8 @@ jobs:
           echo "开始构建APK..." > logs/build-start.log
           date >> logs/build-start.log
           
-          # 使用不同的方式调用buildozer
-          python -m buildozer android debug 2>&1 | tee logs/buildozer-output.log || true
+          # 使用不同的方式调用buildozer，添加-v参数增加详细度
+          python -m buildozer -v android debug 2>&1 | tee logs/buildozer-output.log || true
           
           # 查找并显示日志
           echo "查看构建日志："
@@ -121,10 +145,20 @@ jobs:
           find .buildozer -name "*.apk" -exec cp -v {} bin/ \; 2>/dev/null | tee -a logs/apk-search.log || true
           find . -name "*.apk" -exec cp -v {} bin/ \; 2>/dev/null | tee -a logs/apk-search.log || true
           
+          # 检查是否有真实APK文件(检查大小)
+          echo "检查APK文件大小:" | tee -a logs/apk-search.log
+          find bin -type f -name "*.apk" -exec ls -lh {} \; | tee -a logs/apk-search.log || true
+          
           # 如果仍然找不到APK，创建一个占位APK文件以避免上传错误
-          if [ ! -f "bin/app-debug.apk" ]; then
-            echo "未找到真实APK文件，创建占位APK文件..." | tee -a logs/apk-search.log
+          if [ ! -f "bin/app-debug.apk" ] || [ $(stat -c%s "bin/app-debug.apk" 2>/dev/null || echo "0") -lt 1000 ]; then
+            echo "未找到真实APK文件或APK太小，创建占位APK文件..." | tee -a logs/apk-search.log
             echo "Build failed but log created" > bin/build-failed-placeholder.apk
+            
+            # 分析错误
+            echo "分析构建错误..." | tee logs/error-analysis.log
+            grep -i "error" logs/buildozer-output.log | tee -a logs/error-analysis.log || true
+            grep -i "exception" logs/buildozer-output.log | tee -a logs/error-analysis.log || true
+            grep -i "failed" logs/buildozer-output.log | tee -a logs/error-analysis.log || true
           fi
           
           # 确保日志存在并正确复制
@@ -158,9 +192,9 @@ jobs:
       - name: List generated files
         run: |
           echo "生成的APK文件:"
-          find bin -type f || true
+          find bin -type f -exec ls -lh {} \; || true
           echo "找到的日志文件:"
-          find logs -type f || true
+          find logs -type f -exec ls -lh {} \; || true
           find .buildozer -name "*.log" || true
           find . -name "buildozer.log" || true
       
