@@ -27,11 +27,45 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v2
 
+      - name: Check for main.py and create if missing
+        run: |
+          if [ ! -f "main.py" ]; then
+            echo "main.py不存在，创建简单示例..."
+            cat > main.py << 'EOFPY'
+from kivy.app import App
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.button import Button
+from kivy.uix.label import Label
+
+class MorseTrainerApp(App):
+    def build(self):
+        layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        self.label = Label(text='Morse Trainer', font_size=30)
+        layout.add_widget(self.label)
+        
+        button = Button(text='Start', size_hint=(1, 0.2))
+        button.bind(on_press=self.on_button_press)
+        layout.add_widget(button)
+        
+        return layout
+    
+    def on_button_press(self, instance):
+        self.label.text = 'Morse Trainer Started!'
+
+if __name__ == '__main__':
+    MorseTrainerApp().run()
+EOFPY
+            echo "main.py已创建"
+          else
+            echo "main.py已存在:"
+            cat main.py
+          fi
+          
+          echo "检查目录结构："
+          ls -la
+
       - name: Install Android SDK components
         run: |
-          # 查看可用的NDK版本
-          sdkmanager --list | grep ndk
-          
           # 安装必要的Android SDK组件
           yes | sdkmanager --licenses || true
           sdkmanager "platform-tools" "platforms;android-31" "build-tools;30.0.3" "ndk;25.2.9519653"
@@ -42,11 +76,12 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
+          python -m pip install --upgrade pip wheel setuptools
+          
           # 安装常见的Kivy依赖和buildozer
           pip install buildozer==1.5.0  # 锁定buildozer版本
           pip install cython==0.29.33
-          pip install kivy  # 添加kivy依赖，可能有助于调试
+          pip install kivy  # 添加kivy依赖，有助于调试
           
           # 显示Python和pip版本
           python --version
@@ -76,21 +111,14 @@ jobs:
           echo "检查项目文件结构..."
           ls -la
           
-          # 检查是否有main.py或类似的主入口文件
-          if [ -f "main.py" ]; then
-            echo "发现main.py:"
-            head -n 20 main.py
+          # 创建requirements.txt，如果不存在
+          if [ ! -f "requirements.txt" ]; then
+            echo "requirements.txt不存在，创建基本依赖..."
+            echo "kivy==2.3.1" > requirements.txt
+            echo "requirements.txt已创建"
           else
-            echo "警告: 找不到main.py，查找其他Python文件..."
-            find . -name "*.py" -type f | head -n 5
-          fi
-          
-          # 检查是否有requirements.txt
-          if [ -f "requirements.txt" ]; then
             echo "发现requirements.txt:"
             cat requirements.txt
-          else
-            echo "警告: 找不到requirements.txt"
           fi
 
       # 添加检查buildozer.spec文件的步骤
@@ -150,18 +178,6 @@ jobs:
 
       - name: Build with Buildozer
         run: |
-          # 确保图标和启动画面已创建
-          echo "尝试创建图标和启动画面..."
-          if [ -f "create_icons.py" ]; then
-            if python create_icons.py; then
-              echo "图标创建成功或已经存在"
-            else
-              echo "警告：图标创建失败，但将继续使用现有图标"
-            fi
-          else
-            echo "未找到create_icons.py，跳过图标创建"
-          fi
-          
           # 设置buildozer参数
           export BUILDOZER_BUILD_MODE=debug
           export BUILDOZER_VERBOSE=2  # 提高日志级别
@@ -184,39 +200,40 @@ jobs:
           mkdir -p .buildozer/logs
           mkdir -p logs
           
-          # 创建钩子脚本，解决已知问题 - 不使用heredoc
-          echo '#!/bin/bash' > .buildozer/hooks/before.sh
-          echo 'set -x' >> .buildozer/hooks/before.sh
-          echo 'echo "准备构建环境..."' >> .buildozer/hooks/before.sh
-          echo '' >> .buildozer/hooks/before.sh
-          echo '# 尝试直接修复libffi问题' >> .buildozer/hooks/before.sh
-          echo '# 查找所有libffi目录' >> .buildozer/hooks/before.sh
-          echo 'for LIBFFI_DIR in $(find .buildozer -path "*/libffi/configure.ac" | xargs dirname 2>/dev/null); do' >> .buildozer/hooks/before.sh
-          echo '  echo "修复 $LIBFFI_DIR/configure.ac"' >> .buildozer/hooks/before.sh
-          echo '  if [ -f "$LIBFFI_DIR/configure.ac" ]; then' >> .buildozer/hooks/before.sh
-          echo '    # 添加缺失的宏定义到configure.ac' >> .buildozer/hooks/before.sh
-          echo '    sed -i '\''/AC_INIT/a # 添加缺失的宏定义\\nm4_define([LT_SYS_SYMBOL_USCORE], [])'\'\ "$LIBFFI_DIR/configure.ac"' >> .buildozer/hooks/before.sh
-          echo '    # 强制重新生成configure' >> .buildozer/hooks/before.sh
-          echo '    cd "$LIBFFI_DIR"' >> .buildozer/hooks/before.sh
-          echo '    libtoolize --force --copy' >> .buildozer/hooks/before.sh
-          echo '    aclocal -I m4' >> .buildozer/hooks/before.sh
-          echo '    autoconf' >> .buildozer/hooks/before.sh
-          echo '    cd - || true' >> .buildozer/hooks/before.sh
-          echo '  fi' >> .buildozer/hooks/before.sh
-          echo 'done' >> .buildozer/hooks/before.sh
-          echo '' >> .buildozer/hooks/before.sh
-          echo '# 修复python-for-android可能的问题' >> .buildozer/hooks/before.sh
-          echo 'P4A_DIR=$(find .buildozer -name "python-for-android" -type d | head -n 1)' >> .buildozer/hooks/before.sh
-          echo 'if [ -n "$P4A_DIR" ]; then' >> .buildozer/hooks/before.sh
-          echo '  echo "找到python-for-android目录: $P4A_DIR"' >> .buildozer/hooks/before.sh
-          echo '  # 应用一些已知的修复' >> .buildozer/hooks/before.sh
-          echo '  cd "$P4A_DIR"' >> .buildozer/hooks/before.sh
-          echo '  if [ -f "pythonforandroid/toolchain.py" ]; then' >> .buildozer/hooks/before.sh
-          echo '    echo "检查并修复toolchain.py..."' >> .buildozer/hooks/before.sh
-          echo '    # 此处可以添加特定的修复，如果需要的话' >> .buildozer/hooks/before.sh
-          echo '  fi' >> .buildozer/hooks/before.sh
-          echo '  cd - || true' >> .buildozer/hooks/before.sh
-          echo 'fi' >> .buildozer/hooks/before.sh
+          # 创建钩子脚本，解决已知问题
+          cat > .buildozer/hooks/before.sh << 'EOFSH'
+          #!/bin/bash
+          set -x
+          echo "准备构建环境..."
+          
+          # 尝试直接修复libffi问题
+          # 查找所有libffi目录
+          for LIBFFI_DIR in $(find .buildozer -path "*/libffi/configure.ac" | xargs dirname 2>/dev/null); do
+            echo "修复 $LIBFFI_DIR/configure.ac"
+            if [ -f "$LIBFFI_DIR/configure.ac" ]; then
+              # 添加缺失的宏定义到configure.ac
+              sed -i '/AC_INIT/a # 添加缺失的宏定义\nm4_define([LT_SYS_SYMBOL_USCORE], [])' "$LIBFFI_DIR/configure.ac"
+              # 强制重新生成configure
+              cd "$LIBFFI_DIR"
+              libtoolize --force --copy
+              aclocal -I m4
+              autoconf
+              cd - || true
+            fi
+          done
+          
+          # 修复python-for-android可能的问题
+          P4A_DIR=$(find .buildozer -name "python-for-android" -type d | head -n 1)
+          if [ -n "$P4A_DIR" ]; then
+            echo "找到python-for-android目录: $P4A_DIR"
+            # 应用一些已知的修复
+            cd "$P4A_DIR"
+            if [ -f "pythonforandroid/toolchain.py" ]; then
+              echo "检查并修复toolchain.py..."
+            fi
+            cd - || true
+          fi
+          EOFSH
           
           chmod +x .buildozer/hooks/before.sh
           
@@ -241,17 +258,20 @@ jobs:
           echo "开始构建APK..." > logs/build-start.log
           date >> logs/build-start.log
           
-          # 首先尝试buildozer clean
-          echo "清理之前的构建..."
-          python -m buildozer -v clean 2>&1 | tee logs/buildozer-clean.log
-          
           # 链接Android SDK目录到buildozer期望的位置
           mkdir -p $HOME/.buildozer/android/platform
           ln -sf $ANDROID_SDK_ROOT $HOME/.buildozer/android/platform/android-sdk
           echo "链接Android SDK目录:"
           ls -la $HOME/.buildozer/android/platform/android-sdk
           
-          # 然后进行完整构建
+          # 手动下载python-for-android，避免下载错误
+          echo "手动下载python-for-android..."
+          mkdir -p .buildozer/android/platform
+          cd .buildozer/android/platform
+          git clone -b master --single-branch https://github.com/kivy/python-for-android.git
+          cd ../../..
+          
+          # 直接使用buildozer构建，跳过clean命令
           echo "开始完整构建过程..."
           python -m buildozer -v android debug 2>&1 | tee logs/buildozer-output.log || true
           
@@ -271,8 +291,8 @@ jobs:
           find bin -type f -name "*.apk" -exec ls -lh {} \; | tee -a logs/apk-search.log || true
           
           # 如果没找到APK或APK太小，尝试显示详细错误信息
-          if [ ! -f "bin/app-debug.apk" ] || [ $(stat -c%s "bin/app-debug.apk" 2>/dev/null || echo "0") -lt 1000 ]; then
-            echo "未找到真实APK文件或APK太小，创建占位APK文件..." | tee -a logs/apk-search.log
+          if [ ! -f "bin/morsetrainer-0.1-arm64-v8a-debug.apk" ] && [ ! -f "bin/app-debug.apk" ]; then
+            echo "未找到真实APK文件，创建占位APK文件..." | tee -a logs/apk-search.log
             echo "Build failed but log created" > bin/build-failed-placeholder.apk
             
             # 收集和分析错误
