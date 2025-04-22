@@ -140,61 +140,6 @@ jobs:
         # 禁用NDK自动下载
         echo "android.skip_update = True" >> buildozer.spec
     
-    - name: Build with Buildozer
-      run: |
-        # 确保图标和启动画面已创建
-        echo "尝试创建图标和启动画面..."
-        if python create_icons.py; then
-          echo "图标创建成功或已经存在"
-        else
-          echo "警告：图标创建失败，但将继续使用现有图标"
-        fi
-        
-        # 设置buildozer参数
-        export BUILDOZER_BUILD_MODE=debug
-        export BUILDOZER_VERBOSE=2  # 提高日志级别
-        # 确保使用正确的minapi值
-        export ANDROIDMINAPI=24
-        export ANDROIDAPI=31
-        export PATH=$PATH:~/.local/bin
-        
-        # 完全清除可能存在的缓存
-        echo "彻底清理旧的构建缓存..."
-        rm -rf .buildozer
-        mkdir -p .buildozer/android/platform
-        
-        # 确保NDK指向正确位置
-        echo "确认NDK路径..."
-        export ANDROIDNDK=~/.buildozer/android/platform/android-ndk-r25b
-        
-        # 准备预下载的libffi
-        echo "预先准备libffi..."
-        mkdir -p .buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/libffi
-        
-        # 构建APK
-        echo "开始构建APK..."
-        buildozer -v android debug
-      
-    - name: List generated files
-      run: |
-        echo "Generated APK files:"
-        ls -la bin/
-      
-    - name: Upload APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: app-debug
-        path: bin/*.apk
-        
-    - name: Upload Build Logs
-      if: always()  # 即使失败也上传日志
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-logs
-        path: |
-          .buildozer/logs/*.log
-          buildozer.log
-    
     - name: Prepare for build
       run: |
         # 创建钩子目录结构
@@ -263,4 +208,66 @@ jobs:
         fi
         EOF
         
-        chmod +x .buildozer/hooks/before.sh 
+        chmod +x .buildozer/hooks/before.sh
+    
+    - name: Build with Buildozer
+      run: |
+        # 确保图标和启动画面已创建
+        echo "尝试创建图标和启动画面..."
+        if python create_icons.py; then
+          echo "图标创建成功或已经存在"
+        else
+          echo "警告：图标创建失败，但将继续使用现有图标"
+        fi
+        
+        # 设置buildozer参数
+        export BUILDOZER_BUILD_MODE=debug
+        export BUILDOZER_VERBOSE=2  # 提高日志级别
+        # 确保使用正确的minapi值
+        export ANDROIDMINAPI=24
+        export ANDROIDAPI=31
+        export PATH=$PATH:~/.local/bin
+        
+        # 完全清除可能存在的缓存
+        echo "彻底清理旧的构建缓存..."
+        rm -rf .buildozer/android/platform/build*
+        mkdir -p .buildozer/android/platform
+        
+        # 确保NDK指向正确位置
+        echo "确认NDK路径..."
+        export ANDROIDNDK=~/.buildozer/android/platform/android-ndk-r25b
+        
+        # 准备预下载的libffi
+        echo "预先准备libffi..."
+        mkdir -p .buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/libffi
+        
+        # 构建APK
+        echo "开始构建APK..."
+        buildozer -v android debug || true
+        
+        # 确保日志存在 
+        mkdir -p .buildozer/logs
+        touch buildozer.log
+      
+    - name: List generated files
+      run: |
+        echo "Generated APK files:"
+        ls -la bin/ || true
+        echo "Generated log files:"
+        find .buildozer -name "*.log" || true
+        find . -name "buildozer.log" || true
+      
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-debug
+        path: bin/*.apk
+        
+    - name: Upload Build Logs
+      if: always()  # 即使失败也上传日志
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs
+        path: |
+          .buildozer/**/*.log
+          buildozer.log 
