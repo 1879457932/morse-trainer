@@ -9,11 +9,11 @@ source.exclude_dirs = tests,docs,bin,.vscode,.git
 source.exclude_patterns = .gitignore,__pycache__/**,*.pyc,*.git*
 source.main = src/main.py
 version = 1.0.0
-# 使用简化且兼容的依赖项列表，确保通过pip安装
-requirements = python3==3.9,hostpython3==3.9,kivy==2.1.0,kivymd==1.0.2,pillow
+# 使用极简依赖，以避免任何可能的版本问题
+requirements = python3,kivy,pillow,kivymd
 p4a.bootstrap = sdl2
 p4a.branch = master
-# 注释掉所有可能引起额外问题的配置
+# 移除所有可能引起问题的配置
 # p4a.local_recipes = .
 orientation = portrait
 osx.python_version = 3
