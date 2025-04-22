@@ -24,12 +24,17 @@ jobs:
           pip install buildozer
           pip install cython==0.29.33
           sudo apt update
-          sudo apt install -y git zip unzip openjdk-11-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev
+          # 使用libtinfo-dev代替libtinfo5，libtinfo5在新版Ubuntu中可能不可用
+          sudo apt install -y git zip unzip openjdk-11-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo-dev cmake libffi-dev libssl-dev
           sudo apt install -y libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev libportmidi-dev libswscale-dev libavformat-dev libavcodec-dev
           sudo apt install -y x11proto-core-dev libx11-dev libxrandr-dev
           sudo apt install -y libzbar-dev
           sudo apt install -y libxext-dev
           sudo apt install -y libjpeg-dev libatlas-base-dev
+          
+          # 额外步骤：检查并显示apt安装的包版本
+          echo "已安装的关键包版本："
+          dpkg-query -W -f='${Package} ${Version}\n' libffi-dev libssl-dev libtinfo-dev 2>/dev/null || true
 
       - name: Build with Buildozer
         run: |
@@ -53,9 +58,18 @@ jobs:
           mkdir -p .buildozer/hooks
           mkdir -p .buildozer/android/platform
           mkdir -p .buildozer/logs
+          mkdir -p logs
           
           # 拷贝hooks和配置，确保构建过程中不会被删除
           cp -f .buildozer/hooks/before.sh .buildozer_before.sh || true
+          
+          # 记录初始环境信息，帮助调试
+          echo "系统信息：" > logs/env-info.log
+          uname -a >> logs/env-info.log
+          echo "Python版本：" >> logs/env-info.log
+          python --version >> logs/env-info.log
+          echo "Pip包：" >> logs/env-info.log
+          pip list >> logs/env-info.log
           
           # 再次尝试构建
           echo "再次尝试直接构建APK..."
@@ -90,22 +104,26 @@ jobs:
           # 启用最大调试信息
           export BUILDOZER_VERBOSE=3
           
+          # 记录开始构建信息
+          echo "开始构建APK..." > logs/build-start.log
+          date >> logs/build-start.log
+          
           # 使用不同的方式调用buildozer
-          python -m buildozer android debug || true
+          python -m buildozer android debug 2>&1 | tee logs/buildozer-output.log || true
           
           # 查找并显示日志
           echo "查看构建日志："
-          find .buildozer -name "*.log" -exec head -n 100 {} \; || true
+          find .buildozer -name "*.log" -exec head -n 100 {} \; 2>/dev/null | tee -a logs/log-overview.log || true
           
           # 使用不同的策略查找APK文件并复制到bin目录
           mkdir -p bin
           echo "搜索所有可能的APK文件..."
-          find .buildozer -name "*.apk" -exec cp -v {} bin/ \; || true
-          find . -name "*.apk" -exec cp -v {} bin/ \; || true
+          find .buildozer -name "*.apk" -exec cp -v {} bin/ \; 2>/dev/null | tee -a logs/apk-search.log || true
+          find . -name "*.apk" -exec cp -v {} bin/ \; 2>/dev/null | tee -a logs/apk-search.log || true
           
           # 如果仍然找不到APK，创建一个占位APK文件以避免上传错误
           if [ ! -f "bin/app-debug.apk" ]; then
-            echo "未找到真实APK文件，创建占位APK文件..."
+            echo "未找到真实APK文件，创建占位APK文件..." | tee -a logs/apk-search.log
             echo "Build failed but log created" > bin/build-failed-placeholder.apk
           fi
           
@@ -114,16 +132,22 @@ jobs:
           # 复制buildozer日志到logs目录
           if [ -f "buildozer.log" ]; then
             cp -f buildozer.log .buildozer/logs/main-buildozer.log
+            cp -f buildozer.log logs/buildozer.log
           else 
             echo "找不到buildozer.log，创建占位文件" > .buildozer/logs/buildozer-placeholder.log
+            echo "找不到buildozer.log，创建占位文件" > logs/buildozer-placeholder.log
           fi
           
           # 收集所有日志文件到一个目录，确保上传artifact能找到它们
-          mkdir -p logs
-          cp -f buildozer.log logs/buildozer.log || true
-          find .buildozer -name "*.log" -exec cp -f {} logs/ \; || true
+          find .buildozer -name "*.log" -exec cp -f {} logs/ \; 2>/dev/null || true
           echo "收集到的日志文件:" > logs/log-list.txt
-          ls -la logs/ >> logs/log-list.txt
+          ls -la logs/ >> logs/log-list.txt 2>/dev/null || echo "列出日志目录失败" >> logs/log-list.txt
+          
+          # 确保无论如何都有日志文件
+          if [ ! -f "logs/buildozer.log" ] && [ ! -f "logs/buildozer-output.log" ]; then
+            echo "未找到任何构建日志，创建错误信息日志文件" > logs/build-error.log
+            env >> logs/environment.log
+          fi
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -152,18 +176,36 @@ jobs:
         run: |
           echo "直接检查构建日志，查找关键错误..."
           
+          # 确保始终至少有一个日志文件
+          if [ ! -d "logs" ] || [ -z "$(ls -A logs 2>/dev/null)" ]; then
+            mkdir -p logs
+            echo "未发现任何日志文件，可能是配置问题" > logs/no-logs-found.log
+          fi
+          
           # 查找buildozer日志
           if [ -f "buildozer.log" ]; then
             echo "显示buildozer.log的最后200行..."
             tail -n 200 buildozer.log
+          elif [ -f "logs/buildozer-output.log" ]; then
+            echo "显示buildozer-output.log的最后200行..."
+            tail -n 200 logs/buildozer-output.log
           else
             echo "未找到buildozer.log文件！"
             # 尝试查找其他日志文件
             LOGS=$(find logs -type f 2>/dev/null)
             if [ -n "$LOGS" ]; then
               echo "找到其他日志文件："
-              ls -la $LOGS
+              ls -la logs/
+              # 显示第一个找到的日志文件的内容
+              FIRST_LOG=$(ls logs/*.log 2>/dev/null | head -n 1)
+              if [ -n "$FIRST_LOG" ]; then
+                echo "显示 $FIRST_LOG 的内容:"
+                cat "$FIRST_LOG"
+              fi
             else
               echo "未找到任何日志文件！"
+              echo "创建错误报告..."
+              mkdir -p logs
+              echo "构建过程中未创建日志文件，这可能是由于初始安装或配置问题" > logs/build-error-report.log
             fi
           fi
