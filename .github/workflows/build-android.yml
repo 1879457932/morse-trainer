@@ -21,8 +21,16 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          # 安装常见的Kivy依赖和buildozer
           pip install buildozer==1.5.0  # 锁定buildozer版本
           pip install cython==0.29.33
+          pip install kivy  # 添加kivy依赖，可能有助于调试
+          
+          # 显示Python和pip版本
+          python --version
+          pip --version
+          
+          # 安装系统依赖
           sudo apt update
           # 在Ubuntu 22.04中使用libtinfo-dev替代libtinfo5
           sudo apt install -y git zip unzip openjdk-11-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo-dev cmake libffi-dev libssl-dev
@@ -35,24 +43,55 @@ jobs:
           # 额外步骤：检查并显示apt安装的包版本
           echo "已安装的关键包版本："
           dpkg-query -W -f='${Package} ${Version}\n' libffi-dev libssl-dev libtinfo-dev 2>/dev/null || true
+          
+          # 显示Java版本
+          echo "Java版本："
+          java -version
+
+      # 添加检查项目和源代码文件的步骤
+      - name: Check project files
+        run: |
+          echo "检查项目文件结构..."
+          ls -la
+          
+          # 检查是否有main.py或类似的主入口文件
+          if [ -f "main.py" ]; then
+            echo "发现main.py:"
+            head -n 20 main.py
+          else
+            echo "警告: 找不到main.py，查找其他Python文件..."
+            find . -name "*.py" -type f | head -n 5
+          fi
+          
+          # 检查是否有requirements.txt
+          if [ -f "requirements.txt" ]; then
+            echo "发现requirements.txt:"
+            cat requirements.txt
+          else
+            echo "警告: 找不到requirements.txt"
+          fi
 
       # 添加检查buildozer.spec文件的步骤
-      - name: Check buildozer.spec
+      - name: Setup buildozer.spec
         run: |
-          echo "检查buildozer.spec文件..."
+          echo "设置buildozer.spec文件..."
           if [ -f "buildozer.spec" ]; then
             echo "buildozer.spec内容:"
             cat buildozer.spec
-            # 确保minapi设置正确
-            if grep -q "^android.minapi" buildozer.spec; then
-              echo "更新minapi设置..."
-              sed -i 's/^android.minapi.*/android.minapi = 24/' buildozer.spec
-            else
-              echo "添加minapi设置..."
-              echo "android.minapi = 24" >> buildozer.spec
+            # 确保关键设置正确
+            echo "更新关键设置..."
+            sed -i 's/^android.minapi.*/android.minapi = 24/' buildozer.spec
+            # 确保使用正确的python-for-android版本
+            if ! grep -q "^p4a.branch" buildozer.spec; then
+              echo "p4a.branch = master" >> buildozer.spec
+            fi
+            # 确保requirements包含所有必要的依赖
+            if grep -q "^requirements" buildozer.spec; then
+              sed -i 's/^requirements.*/requirements = python3,kivy/' buildozer.spec
             fi
           else
             echo "警告: 找不到buildozer.spec文件，将创建基本配置"
+            # 使用echo逐行创建文件，而不是heredoc
             echo "[app]" > buildozer.spec
             echo "title = Morse Trainer" >> buildozer.spec
             echo "package.name = morsetrainer" >> buildozer.spec
@@ -64,23 +103,38 @@ jobs:
             echo "orientation = portrait" >> buildozer.spec
             echo "osd = md" >> buildozer.spec
             echo "fullscreen = 0" >> buildozer.spec
+            echo "" >> buildozer.spec
+            echo "[buildozer]" >> buildozer.spec
+            echo "log_level = 2" >> buildozer.spec
+            echo "warn_on_root = 1" >> buildozer.spec
+            echo "" >> buildozer.spec
+            echo "[android]" >> buildozer.spec
             echo "android.permissions = INTERNET" >> buildozer.spec
             echo "android.api = 31" >> buildozer.spec
             echo "android.minapi = 24" >> buildozer.spec
             echo "android.ndk = 23b" >> buildozer.spec
             echo "android.sdk = 31" >> buildozer.spec
             echo "android.arch = arm64-v8a" >> buildozer.spec
+            echo "p4a.branch = master" >> buildozer.spec
             echo "buildozer.spec已创建"
           fi
+          
+          # 显示最终的buildozer.spec
+          echo "最终的buildozer.spec配置:"
+          cat buildozer.spec
 
       - name: Build with Buildozer
         run: |
           # 确保图标和启动画面已创建
           echo "尝试创建图标和启动画面..."
-          if python create_icons.py; then
-            echo "图标创建成功或已经存在"
+          if [ -f "create_icons.py" ]; then
+            if python create_icons.py; then
+              echo "图标创建成功或已经存在"
+            else
+              echo "警告：图标创建失败，但将继续使用现有图标"
+            fi
           else
-            echo "警告：图标创建失败，但将继续使用现有图标"
+            echo "未找到create_icons.py，跳过图标创建"
           fi
           
           # 设置buildozer参数
@@ -97,110 +151,122 @@ jobs:
           mkdir -p .buildozer/logs
           mkdir -p logs
           
-          # 拷贝hooks和配置，确保构建过程中不会被删除
-          cp -f .buildozer/hooks/before.sh .buildozer_before.sh || true
+          # 创建钩子脚本，解决已知问题 - 不使用heredoc
+          echo '#!/bin/bash' > .buildozer/hooks/before.sh
+          echo 'set -x' >> .buildozer/hooks/before.sh
+          echo 'echo "准备构建环境..."' >> .buildozer/hooks/before.sh
+          echo '' >> .buildozer/hooks/before.sh
+          echo '# 尝试直接修复libffi问题' >> .buildozer/hooks/before.sh
+          echo '# 查找所有libffi目录' >> .buildozer/hooks/before.sh
+          echo 'for LIBFFI_DIR in $(find .buildozer -path "*/libffi/configure.ac" | xargs dirname 2>/dev/null); do' >> .buildozer/hooks/before.sh
+          echo '  echo "修复 $LIBFFI_DIR/configure.ac"' >> .buildozer/hooks/before.sh
+          echo '  if [ -f "$LIBFFI_DIR/configure.ac" ]; then' >> .buildozer/hooks/before.sh
+          echo '    # 添加缺失的宏定义到configure.ac' >> .buildozer/hooks/before.sh
+          echo '    sed -i '\''/AC_INIT/a # 添加缺失的宏定义\\nm4_define([LT_SYS_SYMBOL_USCORE], [])'\'\ "$LIBFFI_DIR/configure.ac"' >> .buildozer/hooks/before.sh
+          echo '    # 强制重新生成configure' >> .buildozer/hooks/before.sh
+          echo '    cd "$LIBFFI_DIR"' >> .buildozer/hooks/before.sh
+          echo '    libtoolize --force --copy' >> .buildozer/hooks/before.sh
+          echo '    aclocal -I m4' >> .buildozer/hooks/before.sh
+          echo '    autoconf' >> .buildozer/hooks/before.sh
+          echo '    cd - || true' >> .buildozer/hooks/before.sh
+          echo '  fi' >> .buildozer/hooks/before.sh
+          echo 'done' >> .buildozer/hooks/before.sh
+          echo '' >> .buildozer/hooks/before.sh
+          echo '# 修复python-for-android可能的问题' >> .buildozer/hooks/before.sh
+          echo 'P4A_DIR=$(find .buildozer -name "python-for-android" -type d | head -n 1)' >> .buildozer/hooks/before.sh
+          echo 'if [ -n "$P4A_DIR" ]; then' >> .buildozer/hooks/before.sh
+          echo '  echo "找到python-for-android目录: $P4A_DIR"' >> .buildozer/hooks/before.sh
+          echo '  # 应用一些已知的修复' >> .buildozer/hooks/before.sh
+          echo '  cd "$P4A_DIR"' >> .buildozer/hooks/before.sh
+          echo '  if [ -f "pythonforandroid/toolchain.py" ]; then' >> .buildozer/hooks/before.sh
+          echo '    echo "检查并修复toolchain.py..."' >> .buildozer/hooks/before.sh
+          echo '    # 此处可以添加特定的修复，如果需要的话' >> .buildozer/hooks/before.sh
+          echo '  fi' >> .buildozer/hooks/before.sh
+          echo '  cd - || true' >> .buildozer/hooks/before.sh
+          echo 'fi' >> .buildozer/hooks/before.sh
           
-          # 记录初始环境信息，帮助调试
+          chmod +x .buildozer/hooks/before.sh
+          
+          # 清理旧的构建目录，确保干净构建
+          echo "清理旧的构建目录..."
+          rm -rf .buildozer/android/platform/build-*
+          
+          # 启用最大调试信息
+          export BUILDOZER_VERBOSE=3
+          
+          # 记录环境信息
           echo "系统信息：" > logs/env-info.log
           uname -a >> logs/env-info.log
           echo "Python版本：" >> logs/env-info.log
           python --version >> logs/env-info.log
           echo "Pip包：" >> logs/env-info.log
           pip list >> logs/env-info.log
-          
-          # 显示当前目录和buildozer.spec文件
-          echo "当前目录:" >> logs/env-info.log
-          pwd >> logs/env-info.log
-          echo "文件列表:" >> logs/env-info.log
-          ls -la >> logs/env-info.log
-          
-          # 再次尝试构建
-          echo "开始构建APK..."
-          
-          # 先确保钩子目录存在
-          mkdir -p .buildozer/hooks
-          cat > .buildozer/hooks/before.sh << 'EOF'
-          #!/bin/bash
-          set -x
-          echo "准备构建..."
-          # 尝试直接修复libffi问题
-          # 查找所有libffi目录
-          for LIBFFI_DIR in $(find .buildozer -path "*/libffi/configure.ac" | xargs dirname); do
-            echo "修复 $LIBFFI_DIR/configure.ac"
-            if [ -f "$LIBFFI_DIR/configure.ac" ]; then
-              # 添加缺失的宏定义到configure.ac
-              sed -i '/AC_INIT/a # 添加缺失的宏定义\nm4_define([LT_SYS_SYMBOL_USCORE], [])' "$LIBFFI_DIR/configure.ac"
-              # 强制重新生成configure
-              cd "$LIBFFI_DIR"
-              libtoolize --force --copy
-              aclocal -I m4
-              autoconf
-              cd - || true
-            fi
-          done
-          
-          # 修复其他可能的问题
-          EOF
-          
-          chmod +x .buildozer/hooks/before.sh
-          
-          # 启用最大调试信息
-          export BUILDOZER_VERBOSE=3
+          echo "环境变量：" >> logs/env-info.log
+          env >> logs/env-info.log
           
           # 记录开始构建信息
           echo "开始构建APK..." > logs/build-start.log
           date >> logs/build-start.log
           
-          # 使用不同的方式调用buildozer，添加-v参数增加详细度
+          # 首先尝试buildozer clean
+          echo "清理之前的构建..."
+          python -m buildozer -v clean 2>&1 | tee logs/buildozer-clean.log
+          
+          # 然后进行完整构建
+          echo "开始完整构建过程..."
           python -m buildozer -v android debug 2>&1 | tee logs/buildozer-output.log || true
           
-          # 查找并显示日志
-          echo "查看构建日志："
-          find .buildozer -name "*.log" -exec head -n 100 {} \; 2>/dev/null | tee -a logs/log-overview.log || true
+          # 检查buildozer.log
+          if [ -f "buildozer.log" ]; then
+            echo "buildozer.log存在，复制到logs目录"
+            cp -f buildozer.log logs/
+          fi
           
-          # 使用不同的策略查找APK文件并复制到bin目录
+          # 搜索APK文件
           mkdir -p bin
           echo "搜索所有可能的APK文件..."
           find .buildozer -name "*.apk" -exec cp -v {} bin/ \; 2>/dev/null | tee -a logs/apk-search.log || true
-          find . -name "*.apk" -exec cp -v {} bin/ \; 2>/dev/null | tee -a logs/apk-search.log || true
           
           # 检查是否有真实APK文件(检查大小)
           echo "检查APK文件大小:" | tee -a logs/apk-search.log
           find bin -type f -name "*.apk" -exec ls -lh {} \; | tee -a logs/apk-search.log || true
           
-          # 如果仍然找不到APK，创建一个占位APK文件以避免上传错误
+          # 如果没找到APK或APK太小，尝试显示详细错误信息
           if [ ! -f "bin/app-debug.apk" ] || [ $(stat -c%s "bin/app-debug.apk" 2>/dev/null || echo "0") -lt 1000 ]; then
             echo "未找到真实APK文件或APK太小，创建占位APK文件..." | tee -a logs/apk-search.log
             echo "Build failed but log created" > bin/build-failed-placeholder.apk
             
-            # 分析错误
-            echo "分析构建错误..." | tee logs/error-analysis.log
-            grep -i "error" logs/buildozer-output.log | tee -a logs/error-analysis.log || true
-            grep -i "exception" logs/buildozer-output.log | tee -a logs/error-analysis.log || true
-            grep -i "failed" logs/buildozer-output.log | tee -a logs/error-analysis.log || true
+            # 收集和分析错误
+            echo "收集详细错误信息..." | tee logs/detailed-errors.log
+            
+            # 检查java错误
+            echo "检查Java错误:" | tee -a logs/detailed-errors.log
+            grep -i "java\|jvm\|jdk" logs/buildozer-output.log | tee -a logs/detailed-errors.log || true
+            
+            # 检查python-for-android错误
+            echo "检查python-for-android错误:" | tee -a logs/detailed-errors.log
+            grep -i "p4a\|python-for-android" logs/buildozer-output.log | tee -a logs/detailed-errors.log || true
+            
+            # 检查常见构建错误
+            echo "检查常见构建错误:" | tee -a logs/detailed-errors.log
+            grep -i "error\|exception\|failed\|not found" logs/buildozer-output.log | tee -a logs/detailed-errors.log || true
+            
+            # 查看构建目录
+            echo "构建目录内容:" | tee -a logs/detailed-errors.log
+            find .buildozer -type d -name "build-*" -exec ls -la {} \; 2>/dev/null | tee -a logs/detailed-errors.log || true
           fi
           
-          # 确保日志存在并正确复制
-          mkdir -p .buildozer/logs
-          # 复制buildozer日志到logs目录
-          if [ -f "buildozer.log" ]; then
-            cp -f buildozer.log .buildozer/logs/main-buildozer.log
-            cp -f buildozer.log logs/buildozer.log
-          else 
-            echo "找不到buildozer.log，创建占位文件" > .buildozer/logs/buildozer-placeholder.log
-            echo "找不到buildozer.log，创建占位文件" > logs/buildozer-placeholder.log
+          # 收集所有日志文件
+          echo "收集所有日志文件..."
+          mkdir -p logs/buildozer-logs
+          if [ -d ".buildozer/logs" ]; then
+            cp -r .buildozer/logs/* logs/buildozer-logs/ 2>/dev/null || true
           fi
-          
-          # 收集所有日志文件到一个目录，确保上传artifact能找到它们
           find .buildozer -name "*.log" -exec cp -f {} logs/ \; 2>/dev/null || true
-          echo "收集到的日志文件:" > logs/log-list.txt
-          ls -la logs/ >> logs/log-list.txt 2>/dev/null || echo "列出日志目录失败" >> logs/log-list.txt
           
-          # 确保无论如何都有日志文件
-          if [ ! -f "logs/buildozer.log" ] && [ ! -f "logs/buildozer-output.log" ]; then
-            echo "未找到任何构建日志，创建错误信息日志文件" > logs/build-error.log
-            env >> logs/environment.log
-          fi
+          # 列出收集到的日志
+          echo "收集到的日志文件:" > logs/log-list.txt
+          find logs -type f | sort >> logs/log-list.txt
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -214,8 +280,6 @@ jobs:
           find bin -type f -exec ls -lh {} \; || true
           echo "找到的日志文件:"
           find logs -type f -exec ls -lh {} \; || true
-          find .buildozer -name "*.log" || true
-          find . -name "buildozer.log" || true
       
       - name: Upload Build Logs
         uses: actions/upload-artifact@v4
@@ -227,38 +291,43 @@ jobs:
       - name: Check build logs
         if: always()
         run: |
-          echo "直接检查构建日志，查找关键错误..."
+          echo "分析构建日志，查找关键错误..."
           
-          # 确保始终至少有一个日志文件
-          if [ ! -d "logs" ] || [ -z "$(ls -A logs 2>/dev/null)" ]; then
-            mkdir -p logs
-            echo "未发现任何日志文件，可能是配置问题" > logs/no-logs-found.log
-          fi
-          
-          # 查找buildozer日志
-          if [ -f "buildozer.log" ]; then
-            echo "显示buildozer.log的最后200行..."
-            tail -n 200 buildozer.log
-          elif [ -f "logs/buildozer-output.log" ]; then
-            echo "显示buildozer-output.log的最后200行..."
-            tail -n 200 logs/buildozer-output.log
+          # 检查最常见的错误原因
+          if [ -f "logs/buildozer-output.log" ]; then
+            echo "================================================"
+            echo "检查常见错误模式:"
+            echo "================================================"
+            
+            # NDK相关错误
+            echo "NDK相关错误:"
+            grep -i "ndk" logs/buildozer-output.log | grep -i "error\|fail\|not found" || echo "未发现NDK相关错误"
+            
+            # SDK相关错误
+            echo "SDK相关错误:"
+            grep -i "sdk" logs/buildozer-output.log | grep -i "error\|fail\|not found" || echo "未发现SDK相关错误"
+            
+            # Python相关错误
+            echo "Python相关错误:"
+            grep -i "python" logs/buildozer-output.log | grep -i "error\|fail\|not found" || echo "未发现Python相关错误"
+            
+            # 权限相关错误
+            echo "权限相关错误:"
+            grep -i "permission\|access" logs/buildozer-output.log | grep -i "error\|fail\|denied" || echo "未发现权限相关错误"
+            
+            # 显示最后100行日志
+            echo "================================================"
+            echo "buildozer-output.log的最后100行:"
+            echo "================================================"
+            tail -n 100 logs/buildozer-output.log
           else
-            echo "未找到buildozer.log文件！"
+            echo "找不到buildozer-output.log文件！"
             # 尝试查找其他日志文件
-            LOGS=$(find logs -type f 2>/dev/null)
-            if [ -n "$LOGS" ]; then
-              echo "找到其他日志文件："
-              ls -la logs/
-              # 显示第一个找到的日志文件的内容
-              FIRST_LOG=$(ls logs/*.log 2>/dev/null | head -n 1)
-              if [ -n "$FIRST_LOG" ]; then
-                echo "显示 $FIRST_LOG 的内容:"
-                cat "$FIRST_LOG"
-              fi
+            FIRST_LOG=$(find logs -name "*.log" | head -n 1)
+            if [ -n "$FIRST_LOG" ]; then
+              echo "显示找到的第一个日志文件 ($FIRST_LOG) 内容:"
+              cat "$FIRST_LOG"
             else
               echo "未找到任何日志文件！"
-              echo "创建错误报告..."
-              mkdir -p logs
-              echo "构建过程中未创建日志文件，这可能是由于初始安装或配置问题" > logs/build-error-report.log
             fi
           fi
