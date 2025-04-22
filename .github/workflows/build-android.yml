@@ -74,8 +74,8 @@ jobs:
         # 使用指定版本的buildozer和开发依赖
         pip install Cython==0.29.33 virtualenv
         
-        # 使用稳定版buildozer，从源码安装以确保兼容性
-        pip install https://github.com/kivy/buildozer/archive/refs/tags/v1.5.0.zip
+        # 使用稳定版buildozer，直接从PyPI安装
+        pip install buildozer==1.5.0
         
         # 先安装python-for-android的依赖项
         pip install colorama appdirs sh jinja2 six
