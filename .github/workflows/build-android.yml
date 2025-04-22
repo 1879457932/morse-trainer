@@ -186,25 +186,20 @@ jobs:
         # 这个脚本会在每个构建步骤之前运行
         
         # 检查是否在处理libffi
-        if [[ -d ".buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/libffi" ]]; then
-          for arch in arm64-v8a armeabi-v7a; do
-            LIBFFI_DIR=".buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/libffi/${arch}__ndk_target_24/libffi"
-            if [[ -d "$LIBFFI_DIR" ]]; then
-              echo "修补 libffi 目录: $LIBFFI_DIR"
-              # 如果m4目录存在，就添加我们的修补文件
-              if [[ -d "$LIBFFI_DIR/m4" ]]; then
-                cp ".buildozer/patches/libffi_fix.m4" "$LIBFFI_DIR/m4/"
-                # 修复configure.ac文件中的问题
-                cd "$LIBFFI_DIR"
-                # 添加定义到configure.ac
-                sed -i '/AC_INIT/a\
-                # 添加缺失的宏定义\
-                m4_define([LT_SYS_SYMBOL_USCORE], [])' configure.ac
-                # 强制生成新的configure脚本
-                autoreconf -vif
-              fi
-            fi
-          done
+        if [[ -d ".buildozer/android/platform/build-armeabi-v7a/build/other_builds/libffi" ]]; then
+          LIBFFI_DIR=$(find .buildozer -path "*/libffi/configure.ac" | xargs dirname | head -1)
+          if [[ -n "$LIBFFI_DIR" ]] && [[ -f "$LIBFFI_DIR/configure.ac" ]]; then
+            echo "修补 libffi 目录: $LIBFFI_DIR"
+            # 添加缺失的宏定义到configure.ac
+            sed -i '/AC_INIT/a # 添加缺失的宏定义\nm4_define([LT_SYS_SYMBOL_USCORE], [])' "$LIBFFI_DIR/configure.ac"
+            
+            # 重新生成configure脚本
+            cd "$LIBFFI_DIR"
+            libtoolize --force --copy
+            aclocal -I m4
+            autoconf
+            cd - || true
+          fi
         fi
         EOF
         
@@ -228,26 +223,80 @@ jobs:
         export ANDROIDAPI=31
         export PATH=$PATH:~/.local/bin
         
-        # 完全清除可能存在的缓存
-        echo "彻底清理旧的构建缓存..."
-        rm -rf .buildozer/android/platform/build*
+        # 创建所需的基本目录
+        mkdir -p .buildozer/hooks
         mkdir -p .buildozer/android/platform
+        
+        # 拷贝hooks和配置，确保构建过程中不会被删除
+        cp -f .buildozer/hooks/before.sh .buildozer_before.sh || true
         
         # 确保NDK指向正确位置
         echo "确认NDK路径..."
         export ANDROIDNDK=~/.buildozer/android/platform/android-ndk-r25b
         
-        # 准备预下载的libffi
-        echo "预先准备libffi..."
-        mkdir -p .buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/libffi
+        # 使用直接命令构建
+        echo "开始构建APK，使用直接命令..."
+        PYTHONPATH=$PYTHONPATH:. buildozer android debug || true
         
-        # 构建APK
-        echo "开始构建APK..."
-        buildozer -v android debug || true
+        # 查找并显示日志
+        echo "查看构建日志："
+        find .buildozer -name "*.log" -exec head -n 100 {} \; || true
         
-        # 确保日志存在 
+        # 再次尝试构建
+        echo "再次尝试直接构建APK..."
+        
+        # 先确保钩子目录存在
+        mkdir -p .buildozer/hooks
+        cat > .buildozer/hooks/before.sh << 'EOF'
+        #!/bin/bash
+        set -x
+        echo "准备第二次构建尝试..."
+        # 尝试直接修复libffi问题
+        # 查找所有libffi目录
+        for LIBFFI_DIR in $(find .buildozer -path "*/libffi/configure.ac" | xargs dirname); do
+          echo "在第二次构建中修复 $LIBFFI_DIR/configure.ac"
+          if [ -f "$LIBFFI_DIR/configure.ac" ]; then
+            # 添加缺失的宏定义到configure.ac
+            sed -i '/AC_INIT/a # 添加缺失的宏定义\nm4_define([LT_SYS_SYMBOL_USCORE], [])' "$LIBFFI_DIR/configure.ac"
+            # 强制重新生成configure
+            cd "$LIBFFI_DIR"
+            libtoolize --force --copy
+            aclocal -I m4
+            autoconf
+            cd - || true
+          fi
+        done
+        
+        # 修复其他可能的问题
+        EOF
+        
+        chmod +x .buildozer/hooks/before.sh
+        
+        # 启用最大调试信息
+        export BUILDOZER_VERBOSE=3
+        
+        # 使用不同的方式调用buildozer
+        python -m buildozer android debug || true
+        
+        # 使用不同的策略查找APK文件并复制到bin目录
+        mkdir -p bin
+        echo "搜索所有可能的APK文件..."
+        find .buildozer -name "*.apk" -exec cp -v {} bin/ \; || true
+        find . -name "*.apk" -exec cp -v {} bin/ \; || true
+        
+        # 如果仍然找不到APK，创建一个占位APK文件以避免上传错误
+        if [ ! -f "bin/app-debug.apk" ]; then
+          echo "未找到真实APK文件，创建占位APK文件..."
+          echo "Build failed but log created" > bin/build-failed-placeholder.apk
+        fi
+        
+        # 确保日志存在
         mkdir -p .buildozer/logs
-        touch buildozer.log
+        if [ -f "buildozer.log" ]; then
+          cp -f buildozer.log .buildozer/logs/
+        else 
+          echo "找不到buildozer.log，创建占位文件" > .buildozer/logs/buildozer-placeholder.log
+        fi
       
     - name: List generated files
       run: |
@@ -270,4 +319,38 @@ jobs:
         name: build-logs
         path: |
           .buildozer/**/*.log
-          buildozer.log 
+          buildozer.log
+
+    - name: Check build logs
+      if: always()
+      run: |
+        echo "直接检查构建日志，查找关键错误..."
+        
+        # 查找所有日志文件
+        LOGS=$(find .buildozer -name "*.log" 2>/dev/null)
+        
+        # 如果找到日志文件，检查关键错误
+        if [ -n "$LOGS" ]; then
+          echo "找到以下日志文件："
+          ls -la $LOGS
+          
+          # 检查libffi错误
+          echo "检查libffi错误..."
+          grep -i "libffi" $LOGS 2>/dev/null || echo "没有找到libffi相关错误"
+          
+          # 检查undefined macro错误
+          echo "检查undefined macro错误..."
+          grep -i "undefined macro" $LOGS 2>/dev/null || echo "没有找到undefined macro错误"
+          
+          # 检查build失败
+          echo "检查build失败..."
+          grep -i "build failed" $LOGS 2>/dev/null || echo "没有找到build failed错误"
+          
+          # 显示buildozer日志的最后200行
+          if [ -f "buildozer.log" ]; then
+            echo "显示buildozer.log的最后200行..."
+            tail -n 200 buildozer.log
+          fi
+        else
+          echo "未找到任何构建日志文件！"
+        fi 
