@@ -71,7 +71,7 @@ android.use_wifi = False
 # Build settings
 # 注释掉pip镜像源设置
 # requirements.source.pip = https://mirrors.aliyun.com/pypi/simple/
-p4a.hook = 
+p4a.hook = .
 
 # 添加debuggable选项以便调试
 android.release_artifact = apk
@@ -80,3 +80,5 @@ android.debuggable = True
 [buildozer]
 log_level = 2
 warn_on_root = 1
+# 添加钩子路径
+hook = .buildozer/hooks
